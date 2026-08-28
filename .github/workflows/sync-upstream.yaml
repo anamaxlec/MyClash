@@ -1,0 +1,35 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # 每天 UTC 18:00（北京时间次日 02:00）检查一次上游更新
+    - cron: '0 18 * * *'
+  workflow_dispatch: # 支持在 Actions 页面手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/AIsouler/MyClash.git
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Merge upstream into main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge upstream/main --no-edit
+
+      - name: Push
+        run: git push origin main
