@@ -1082,7 +1082,7 @@ function buildDnsAndHostsConfig(config, filteredProxies) {
     'enhanced-mode': 'fake-ip',
     'fake-ip-range': '198.18.0.1/15',
     'fake-ip-range6': '2001:2::1/48',
-    // FCM 推送长连接域名加入 fake-ip-filter，避免 fake-ip 导致推送连接异常（mtalk.google.com 后缀匹配覆盖 alt1~alt8）
+    // FCM 推送相关域名使用真实 DNS 结果，避免 fake-ip 干扰长连接与注册流程
     'fake-ip-filter': [
       'rule-set:private',
       'rule-set:fakeip_filter',
@@ -1091,6 +1091,17 @@ function buildDnsAndHostsConfig(config, filteredProxies) {
       'mtalk4.google.com',
       'mtalk-dev.google.com',
       'mtalk-staging.google.com',
+      'alt1-mtalk.google.com',
+      'alt2-mtalk.google.com',
+      'alt3-mtalk.google.com',
+      'alt4-mtalk.google.com',
+      'alt5-mtalk.google.com',
+      'alt6-mtalk.google.com',
+      'alt7-mtalk.google.com',
+      'alt8-mtalk.google.com',
+      'android.apis.google.com',
+      'device-provisioning.googleapis.com',
+      'firebaseinstallations.googleapis.com',
       ...proxyFakeIpFilter,
     ],
     'proxy-server-nameserver': chinaDohDNS,
