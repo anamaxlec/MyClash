@@ -5,6 +5,11 @@ on:
     # 每天 UTC 18:00（北京时间次日 02:00）检查一次上游更新
     - cron: '0 18 * * *'
   workflow_dispatch: # 支持在 Actions 页面手动触发
+  push:
+    branches: ['main']
+    paths:
+      # 修改同步逻辑时立即自测一次，也可用于手动触发一次同步
+      - '.github/workflows/sync-upstream.yaml'
 
 permissions:
   contents: write
@@ -30,6 +35,123 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git merge upstream/main --no-edit
+
+      - name: Preserve FCM fake-ip protection
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          FCM_DOMAINS = [
+              'mtalk.google.com',
+              'mtalk4.google.com',
+              'mtalk-dev.google.com',
+              'mtalk-staging.google.com',
+              'alt1-mtalk.google.com',
+              'alt2-mtalk.google.com',
+              'alt3-mtalk.google.com',
+              'alt4-mtalk.google.com',
+              'alt5-mtalk.google.com',
+              'alt6-mtalk.google.com',
+              'alt7-mtalk.google.com',
+              'alt8-mtalk.google.com',
+              'android.apis.google.com',
+              'device-provisioning.googleapis.com',
+              'firebaseinstallations.googleapis.com',
+          ]
+
+          STATIC_FILES = [
+              Path('Config/mihomoConfig.yaml'),
+              Path('Config/mihomoConfigLite.yaml'),
+          ]
+          JS_FILES = [
+              Path('Script/Script.js'),
+              Path('Script/mihomoScript.js'),
+          ]
+
+          def patch_static(path):
+              text = path.read_text(encoding='utf-8')
+              match = re.search(r"(?m)^  fake-ip-filter:\s*(\[[\s\S]*?\])", text)
+              if not match:
+                  raise RuntimeError(f'{path}: fake-ip-filter not found')
+
+              block = match.group(1)
+              entries = re.findall(r"'([^']+)'", block)
+              for domain in FCM_DOMAINS:
+                  if domain not in entries:
+                      entries.append(domain)
+
+              rebuilt = '[\n' + ''.join(f"      '{entry}',\n" for entry in entries) + '    ]'
+              text = text[:match.start(1)] + rebuilt + text[match.end(1):]
+
+              comment = '  # FCM 推送相关域名使用真实 DNS 结果，避免 fake-ip 干扰长连接与注册流程'
+              if re.search(r'(?m)^  # FCM .*$', text):
+                  text = re.sub(r'(?m)^  # FCM .*$', comment, text, count=1)
+              else:
+                  text = text.replace('  fake-ip-filter:', comment + '\n  fake-ip-filter:', 1)
+
+              path.write_text(text, encoding='utf-8')
+
+          def patch_js(path):
+              text = path.read_text(encoding='utf-8')
+              match = re.search(r"(?m)^(\s*)'fake-ip-filter':\s*\[([\s\S]*?)\]", text)
+              if not match:
+                  raise RuntimeError(f'{path}: fake-ip-filter not found')
+
+              indent = match.group(1)
+              inner = match.group(2)
+              entries = re.findall(r"'([^']+)'", inner)
+              spreads = re.findall(r"\.\.\.[A-Za-z_$][\w$]*", inner)
+              for domain in FCM_DOMAINS:
+                  if domain not in entries:
+                      entries.append(domain)
+
+              item_indent = indent + '  '
+              rebuilt = (
+                  f"{indent}'fake-ip-filter': [\n"
+                  + ''.join(f"{item_indent}'{entry}',\n" for entry in entries)
+                  + ''.join(f"{item_indent}{spread},\n" for spread in spreads)
+                  + f'{indent}]'
+              )
+              text = text[:match.start()] + rebuilt + text[match.end():]
+
+              comment = indent + '// FCM 推送相关域名使用真实 DNS 结果，避免 fake-ip 干扰长连接与注册流程'
+              old_comment = re.compile(r'(?m)^\s*// FCM .*$', re.M)
+              block_start = text.rfind('\n', 0, text.find("'fake-ip-filter':")) + 1
+              before = text[:block_start]
+              if old_comment.search(before[-300:]):
+                  start = max(0, len(before) - 300)
+                  tail = before[start:]
+                  tail = old_comment.sub(comment, tail, count=1)
+                  text = before[:start] + tail + text[block_start:]
+              else:
+                  text = text[:block_start] + comment + '\n' + text[block_start:]
+
+              path.write_text(text, encoding='utf-8')
+
+          for file in STATIC_FILES:
+              patch_static(file)
+          for file in JS_FILES:
+              patch_js(file)
+
+          for path in STATIC_FILES + JS_FILES:
+              text = path.read_text(encoding='utf-8')
+              for domain in FCM_DOMAINS:
+                  if domain not in text:
+                      raise RuntimeError(f'{path}: missing protected FCM domain {domain}')
+
+          print('FCM fake-ip protection verified for all four files')
+          PY
+
+      - name: Commit protected downstream changes
+        run: |
+          git add Config/mihomoConfig.yaml Config/mihomoConfigLite.yaml Script/Script.js Script/mihomoScript.js
+          if git diff --cached --quiet; then
+            echo "FCM protection already intact"
+          else
+            git commit -m "chore: preserve FCM fake-ip protection"
+          fi
 
       - name: Push
         run: git push origin main
