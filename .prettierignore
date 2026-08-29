@@ -1,2 +1,2 @@
-# Keep workflow files out of Prettier to avoid workflow-token push restrictions
+# Keep GitHub workflow files out of Prettier to avoid workflow-token push restrictions
 .github/workflows/
