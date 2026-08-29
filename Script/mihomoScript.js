@@ -264,6 +264,12 @@ const baseRuleProviders = {
 
   // --- 代理规则集 ---
 
+  googlefcm: {
+    ...ruleProviderCommonDomain,
+    url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/googlefcm.mrs',
+    path: './ruleset/googlefcm.mrs',
+    'path-in-bundle': 'geo/geosite/googlefcm.mrs',
+  },
   'geolocation-!cn': {
     ...ruleProviderCommonDomain,
     url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/geolocation-!cn.mrs',
@@ -1354,11 +1360,12 @@ function buildDnsAndHostsConfig(config, filteredProxies) {
     'enhanced-mode': 'fake-ip',
     'fake-ip-range': '198.18.0.1/15',
     'fake-ip-range6': '2001:2::1/48',
-    // FCM 推送相关域名使用真实 DNS 结果，避免 fake-ip 干扰长连接与注册流程
+    // FCM 使用 googlefcm rule-set 动态覆盖，并保留 Google 官方域名作为显式兜底
     'fake-ip-filter': [
       'rule-set:private',
       'rule-set:fakeip_filter',
       'rule-set:geolocation-cn',
+      'rule-set:googlefcm',
       'mtalk.google.com',
       'mtalk4.google.com',
       'mtalk-dev.google.com',
