@@ -10,9 +10,17 @@
 
 主要用于 Android 设备，尤其是依赖 Google FCM 的应用，例如 Google Play 版微信。
 
-将 Google FCM / Android 推送链路相关域名加入 `fake-ip-filter`，让这些域名使用真实 DNS 结果，减少 fake-ip 对长连接、注册和重连流程的干扰。
+将 `googlefcm.mrs` 提升为始终可用的基础 Rule Provider，并在 `fake-ip-filter` 中加入：
 
-当前保护的域名包括：
+```text
+rule-set:googlefcm
+```
+
+这样规则集后续新增的 FCM 域名也会自动使用真实 DNS 结果，不需要手工追着补域名。即使关闭全量版里的 `FCM` 分流策略组，或者使用精简版，`googlefcm` provider 仍然存在，不会产生悬空的 rule-set 引用。
+
+同时保留 Google 官方 FCM / Android 推送链路 hostname 作为显式兜底，形成“动态规则集 + 官方域名列表”的双保险，减少 fake-ip 对长连接、注册和重连流程的干扰。
+
+当前显式保护的域名包括：
 
 ```text
 mtalk.google.com
@@ -25,7 +33,7 @@ device-provisioning.googleapis.com
 firebaseinstallations.googleapis.com
 ```
 
-全量版仍保留上游的独立 `FCM` 策略组，可根据实际网络环境选择直连或固定代理出口。
+全量版仍保留上游的独立 `FCM` 策略组，可根据实际网络环境选择直连或固定代理出口。`fake-ip-filter` 只负责让这些域名返回 real IP，不会强制改变其最终的 DIRECT / Proxy 路由策略。
 
 ### 2. 国内 QUIC 放行判断优化
 
@@ -99,9 +107,12 @@ AIsouler/MyClash main
 
 目前自动保护：
 
-- FCM real-IP / `fake-ip-filter` 优化
+- `googlefcm` 基础 provider 与 `rule-set:googlefcm` real-IP 保护
+- Google 官方 FCM hostname 显式兜底
 - 国内 QUIC 的 `geolocation-cn` 放行
 - `rule-set:cn` / `rule-set:geolocation-cn` 使用国内 DoH
+
+保护脚本采用幂等处理：已经处于优化状态时再次运行不会因为“找不到旧写法”而失败。
 
 因此上游后续对核心脚本和配置的修复仍可正常合入，不会因为本地定制而整文件停止更新。
 
@@ -187,8 +198,9 @@ https://raw.githubusercontent.com/anamaxlec/MyClash/main/Config/mihomoConfigLite
        └─ 默认代理
 
 FCM / Android 推送相关域名
-  └─ fake-ip-filter
-       └─ 返回真实 IP
+  ├─ rule-set:googlefcm（动态覆盖）
+  └─ Google 官方 hostname（显式兜底）
+       └─ fake-ip-filter → 返回真实 IP
 ```
 
 同时保留：
