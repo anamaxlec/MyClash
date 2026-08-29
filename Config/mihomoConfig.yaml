@@ -109,7 +109,8 @@ dns:
   default-nameserver: *chinaDNS
   nameserver: *foreignDNS
   nameserver-policy:
-    'rule-set:cn': *chinaDNS
+    'rule-set:cn': *chinaDohDNS
+    'rule-set:geolocation-cn': *chinaDohDNS
   direct-nameserver: ['system', '223.5.5.5', '119.29.29.29']
 
 hosts:
@@ -661,7 +662,7 @@ rules:
   - DOMAIN,international-gfe.download.nvidia.com,直连
 
   # 禁用国外 QUIC 流量
-  - AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT
+  - AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,geolocation-cn),(RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT
 
   # 广告拦截
   - RULE-SET,adblockmihomolite,AdBlock

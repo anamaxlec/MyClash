@@ -87,7 +87,7 @@ const excludeFilter =
 
 // 屏蔽国外QUIC
 const blockForeignQuic = [
-  'AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT',
+  'AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,geolocation-cn),(RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT',
 ];
 
 // 直连节点
@@ -1111,7 +1111,8 @@ function buildDnsAndHostsConfig(config, filteredProxies) {
     'default-nameserver': chinaDNS,
     nameserver: foreignDNS,
     'nameserver-policy': {
-      'rule-set:cn': chinaDNS,
+      'rule-set:cn': chinaDohDNS,
+      'rule-set:geolocation-cn': chinaDohDNS,
     },
     'direct-nameserver': ['system', ...chinaDNS],
   };
