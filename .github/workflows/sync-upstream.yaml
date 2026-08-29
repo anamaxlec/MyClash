@@ -70,18 +70,76 @@ jobs:
               Path('Script/mihomoScript.js'),
           ]
 
+          GOOGLEFCM_RULESET = 'rule-set:googlefcm'
+          GOOGLEFCM_URL = 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/googlefcm.mrs'
           QUIC_RULE = "AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,geolocation-cn),(RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT"
+          OLD_QUIC_RULE = "AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT"
+
+          def ensure_after(entries, anchor, value):
+              if value in entries:
+                  return entries
+              if anchor in entries:
+                  entries.insert(entries.index(anchor) + 1, value)
+              else:
+                  entries.append(value)
+              return entries
+
+          def ensure_static_googlefcm_provider(text, path):
+              if re.search(r'(?m)^  googlefcm:\s*$', text):
+                  return text
+
+              marker = re.search(r"(?m)^  geolocation-!cn:\s*$", text)
+              if not marker:
+                  raise RuntimeError(f'{path}: rule-providers insertion point not found')
+
+              block = (
+                  "  googlefcm:\n"
+                  "    <<: *rule_providers_domain\n"
+                  f"    url: '{GOOGLEFCM_URL}'\n"
+                  "    path: './ruleset/googlefcm.mrs'\n"
+                  "    path-in-bundle: 'geo/geosite/googlefcm.mrs'\n"
+              )
+              return text[:marker.start()] + block + text[marker.start():]
+
+          def ensure_js_googlefcm_provider(text, path):
+              start = text.find('const baseRuleProviders = {')
+              end = text.find('// 策略组公共配置', start)
+              if start == -1 or end == -1:
+                  raise RuntimeError(f'{path}: baseRuleProviders block not found')
+
+              base_block = text[start:end]
+              if re.search(r'(?m)^  googlefcm:\s*\{', base_block):
+                  return text
+
+              marker = re.search(r"(?m)^  'geolocation-!cn':\s*\{", base_block)
+              if not marker:
+                  raise RuntimeError(f'{path}: baseRuleProviders insertion point not found')
+
+              absolute = start + marker.start()
+              block = (
+                  "  googlefcm: {\n"
+                  "    ...ruleProviderCommonDomain,\n"
+                  f"    url: '{GOOGLEFCM_URL}',\n"
+                  "    path: './ruleset/googlefcm.mrs',\n"
+                  "    'path-in-bundle': 'geo/geosite/googlefcm.mrs',\n"
+                  "  },\n"
+              )
+              return text[:absolute] + block + text[absolute:]
 
           def patch_static(path):
               text = path.read_text(encoding='utf-8')
 
-              # 1. FCM 相关域名保持 real-IP，避免 fake-ip 干扰长连接和注册流程。
+              # googlefcm 必须始终存在，否则关闭 FCM 策略组或使用精简版时
+              # fake-ip-filter 引用 rule-set:googlefcm 会成为悬空引用。
+              text = ensure_static_googlefcm_provider(text, path)
+
+              # FCM 使用动态 googlefcm rule-set + Google 官方 hostname 显式兜底。
               match = re.search(r"(?m)^  fake-ip-filter:\s*(\[[\s\S]*?\])", text)
               if not match:
                   raise RuntimeError(f'{path}: fake-ip-filter not found')
 
-              block = match.group(1)
-              entries = re.findall(r"'([^']+)'", block)
+              entries = re.findall(r"'([^']+)'", match.group(1))
+              ensure_after(entries, 'rule-set:geolocation-cn', GOOGLEFCM_RULESET)
               for domain in FCM_DOMAINS:
                   if domain not in entries:
                       entries.append(domain)
@@ -89,42 +147,45 @@ jobs:
               rebuilt = '[\n' + ''.join(f"      '{entry}',\n" for entry in entries) + '    ]'
               text = text[:match.start(1)] + rebuilt + text[match.end(1):]
 
-              comment = '  # FCM 推送相关域名使用真实 DNS 结果，避免 fake-ip 干扰长连接与注册流程'
+              comment = '  # FCM 使用 googlefcm rule-set 动态覆盖，并保留 Google 官方域名作为显式兜底'
               if re.search(r'(?m)^  # FCM .*$', text):
                   text = re.sub(r'(?m)^  # FCM .*$', comment, text, count=1)
               else:
                   text = text.replace('  fake-ip-filter:', comment + '\n  fake-ip-filter:', 1)
 
-              # 2. 国内域名统一使用直连国内 DoH，兼顾 CDN 调度与 DNS 隐私。
-              policy_pattern = re.compile(
-                  r"(?m)^(\s*)'rule-set:cn':\s*\*chinaDNS\s*$"
-              )
-              m = policy_pattern.search(text)
+              # 国内域名统一使用直连国内 DoH；兼容首次应用和已经优化后的状态。
+              cn_policy = re.compile(r"(?m)^(\s*)'rule-set:cn':\s*\*(?:chinaDNS|chinaDohDNS)\s*$")
+              m = cn_policy.search(text)
               if not m:
                   raise RuntimeError(f'{path}: nameserver-policy rule-set:cn not found')
               indent = m.group(1)
-              replacement = (
-                  f"{indent}'rule-set:cn': *chinaDohDNS\n"
-                  f"{indent}'rule-set:geolocation-cn': *chinaDohDNS"
-              )
-              text = policy_pattern.sub(replacement, text, count=1)
+              text = cn_policy.sub(f"{indent}'rule-set:cn': *chinaDohDNS", text, count=1)
 
-              # 3. 国外 QUIC 禁用时，以 geolocation-cn + cn_additional + cn_ip 共同判定国内流量。
-              text, count = re.subn(
-                  r"AND,\(\(NETWORK,UDP\),\(DST-PORT,443\),\(NOT,\(\(OR,\(\(RULE-SET,cn_additional\),\(RULE-SET,cn_ip,no-resolve\)\)\)\)\)\),REJECT",
-                  QUIC_RULE,
-                  text,
-                  count=1,
-              )
-              if count != 1:
-                  raise RuntimeError(f'{path}: QUIC rule not found')
+              geo_policy = re.compile(r"(?m)^\s*'rule-set:geolocation-cn':\s*\*(?:chinaDNS|chinaDohDNS)\s*$")
+              if geo_policy.search(text):
+                  text = geo_policy.sub(f"{indent}'rule-set:geolocation-cn': *chinaDohDNS", text, count=1)
+              else:
+                  text = text.replace(
+                      f"{indent}'rule-set:cn': *chinaDohDNS",
+                      f"{indent}'rule-set:cn': *chinaDohDNS\n{indent}'rule-set:geolocation-cn': *chinaDohDNS",
+                      1,
+                  )
+
+              # 国外 QUIC 禁用时，以 geolocation-cn + cn_additional + cn_ip 共同判定国内流量。
+              if QUIC_RULE not in text:
+                  if OLD_QUIC_RULE not in text:
+                      raise RuntimeError(f'{path}: QUIC rule not found')
+                  text = text.replace(OLD_QUIC_RULE, QUIC_RULE, 1)
 
               path.write_text(text, encoding='utf-8')
 
           def patch_js(path):
               text = path.read_text(encoding='utf-8')
 
-              # 1. FCM real-IP 保护。
+              # googlefcm 提升为基础 provider，保证 FCM 分流关闭时仍能被 DNS 引用。
+              text = ensure_js_googlefcm_provider(text, path)
+
+              # FCM 使用动态 googlefcm rule-set + Google 官方 hostname 显式兜底。
               match = re.search(r"(?m)^(\s*)'fake-ip-filter':\s*\[([\s\S]*?)\]", text)
               if not match:
                   raise RuntimeError(f'{path}: fake-ip-filter not found')
@@ -133,6 +194,7 @@ jobs:
               inner = match.group(2)
               entries = re.findall(r"'([^']+)'", inner)
               spreads = re.findall(r"\.\.\.[A-Za-z_$][\w$]*", inner)
+              ensure_after(entries, 'rule-set:geolocation-cn', GOOGLEFCM_RULESET)
               for domain in FCM_DOMAINS:
                   if domain not in entries:
                       entries.append(domain)
@@ -146,37 +208,44 @@ jobs:
               )
               text = text[:match.start()] + rebuilt + text[match.end():]
 
-              comment = indent + '// FCM 推送相关域名使用真实 DNS 结果，避免 fake-ip 干扰长连接与注册流程'
-              old_comment = re.compile(r'(?m)^\s*// FCM .*$', re.M)
+              comment = indent + '// FCM 使用 googlefcm rule-set 动态覆盖，并保留 Google 官方域名作为显式兜底'
               block_start = text.rfind('\n', 0, text.find("'fake-ip-filter':")) + 1
               before = text[:block_start]
+              old_comment = re.compile(r'(?m)^\s*// FCM .*$', re.M)
               if old_comment.search(before[-300:]):
                   start = max(0, len(before) - 300)
-                  tail = before[start:]
-                  tail = old_comment.sub(comment, tail, count=1)
+                  tail = old_comment.sub(comment, before[start:], count=1)
                   text = before[:start] + tail + text[block_start:]
               else:
                   text = text[:block_start] + comment + '\n' + text[block_start:]
 
-              # 2. 国内域名走直连国内 DoH。
-              policy_pattern = re.compile(
-                  r"(?m)^(\s*)'rule-set:cn':\s*chinaDNS,\s*$"
-              )
-              m = policy_pattern.search(text)
+              # 国内域名走直连国内 DoH；兼容首次应用和已经优化后的状态。
+              cn_policy = re.compile(r"(?m)^(\s*)'rule-set:cn':\s*(?:chinaDNS|chinaDohDNS),\s*$")
+              m = cn_policy.search(text)
               if not m:
                   raise RuntimeError(f'{path}: nameserver-policy rule-set:cn not found')
               policy_indent = m.group(1)
-              replacement = (
-                  f"{policy_indent}'rule-set:cn': chinaDohDNS,\n"
-                  f"{policy_indent}'rule-set:geolocation-cn': chinaDohDNS,"
-              )
-              text = policy_pattern.sub(replacement, text, count=1)
+              text = cn_policy.sub(f"{policy_indent}'rule-set:cn': chinaDohDNS,", text, count=1)
 
-              # 3. 国内 QUIC 判定补充 geolocation-cn。
-              old_quic = "AND,((NETWORK,UDP),(DST-PORT,443),(NOT,((OR,((RULE-SET,cn_additional),(RULE-SET,cn_ip,no-resolve)))))),REJECT"
-              if old_quic not in text:
-                  raise RuntimeError(f'{path}: QUIC rule not found')
-              text = text.replace(old_quic, QUIC_RULE, 1)
+              geo_policy = re.compile(r"(?m)^\s*'rule-set:geolocation-cn':\s*(?:chinaDNS|chinaDohDNS),\s*$")
+              if geo_policy.search(text):
+                  text = geo_policy.sub(
+                      f"{policy_indent}'rule-set:geolocation-cn': chinaDohDNS,",
+                      text,
+                      count=1,
+                  )
+              else:
+                  text = text.replace(
+                      f"{policy_indent}'rule-set:cn': chinaDohDNS,",
+                      f"{policy_indent}'rule-set:cn': chinaDohDNS,\n{policy_indent}'rule-set:geolocation-cn': chinaDohDNS,",
+                      1,
+                  )
+
+              # 国内 QUIC 判定补充 geolocation-cn。
+              if QUIC_RULE not in text:
+                  if OLD_QUIC_RULE not in text:
+                      raise RuntimeError(f'{path}: QUIC rule not found')
+                  text = text.replace(OLD_QUIC_RULE, QUIC_RULE, 1)
 
               path.write_text(text, encoding='utf-8')
 
@@ -185,17 +254,22 @@ jobs:
           for file in JS_FILES:
               patch_js(file)
 
+          # 强校验：四份文件必须同时具备动态 FCM rule-set、显式兜底、China QUIC 和 China DoH。
           for path in STATIC_FILES + JS_FILES:
               text = path.read_text(encoding='utf-8')
+              if GOOGLEFCM_RULESET not in text:
+                  raise RuntimeError(f'{path}: missing {GOOGLEFCM_RULESET} in fake-ip-filter')
+              if GOOGLEFCM_URL not in text:
+                  raise RuntimeError(f'{path}: missing always-available googlefcm provider')
               for domain in FCM_DOMAINS:
                   if domain not in text:
                       raise RuntimeError(f'{path}: missing protected FCM domain {domain}')
-              if 'RULE-SET,geolocation-cn' not in text or QUIC_RULE not in text:
+              if QUIC_RULE not in text:
                   raise RuntimeError(f'{path}: missing protected China QUIC rule')
               if 'rule-set:geolocation-cn' not in text or 'chinaDohDNS' not in text:
                   raise RuntimeError(f'{path}: missing protected China DoH policy')
 
-          print('Downstream FCM, China QUIC and China DoH optimizations verified for all four files')
+          print('Downstream googlefcm, FCM fallback, China QUIC and China DoH optimizations verified for all four files')
           PY
 
       - name: Commit protected downstream changes
@@ -204,7 +278,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Downstream optimizations already intact"
           else
-            git commit -m "perf: preserve FCM, China QUIC and DoH optimizations"
+            git commit -m "perf: preserve FCM rule-set, China QUIC and DoH optimizations"
           fi
 
       - name: Push
