@@ -1,4 +1,4 @@
-# MyClash
+# NetWeave
 
 这是基于 [AIsouler/MyClash](https://github.com/AIsouler/MyClash) 的个人优化 Fork，继续跟随上游更新，并针对我自己的 Android / Bettbox 使用场景做了一些网络稳定性调整。
 
@@ -133,7 +133,7 @@ AIsouler/MyClash main
 [mihomoScript.js](/Script/mihomoScript.js)
 
 ```text
-https://raw.githubusercontent.com/anamaxlec/MyClash/main/Script/mihomoScript.js
+https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Script/mihomoScript.js
 ```
 
 ### 精简版
@@ -141,7 +141,7 @@ https://raw.githubusercontent.com/anamaxlec/MyClash/main/Script/mihomoScript.js
 [Script.js](/Script/Script.js)
 
 ```text
-https://raw.githubusercontent.com/anamaxlec/MyClash/main/Script/Script.js
+https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Script/Script.js
 ```
 
 全量版包含更多独立分流策略组；精简版保留核心分流逻辑，适合不需要大量策略组的场景。
@@ -153,7 +153,7 @@ https://raw.githubusercontent.com/anamaxlec/MyClash/main/Script/Script.js
 [mihomoConfig.yaml](/Config/mihomoConfig.yaml)
 
 ```text
-https://raw.githubusercontent.com/anamaxlec/MyClash/main/Config/mihomoConfig.yaml
+https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Config/mihomoConfig.yaml
 ```
 
 ### 精简版
@@ -161,7 +161,7 @@ https://raw.githubusercontent.com/anamaxlec/MyClash/main/Config/mihomoConfig.yam
 [mihomoConfigLite.yaml](/Config/mihomoConfigLite.yaml)
 
 ```text
-https://raw.githubusercontent.com/anamaxlec/MyClash/main/Config/mihomoConfigLite.yaml
+https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Config/mihomoConfigLite.yaml
 ```
 
 静态配置与覆写脚本的主要网络策略保持一致，但不具备脚本的动态节点处理能力。
