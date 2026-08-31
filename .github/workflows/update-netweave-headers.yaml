@@ -1,0 +1,96 @@
+name: Update NetWeave headers
+
+on:
+  push:
+    branches: ['main']
+    paths:
+      - '.github/workflows/update-netweave-headers.yaml'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update headers
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('Script/mihomoScript.js'): (
+                  "/**\n"
+                  " * NetWeave - mihomo配置覆写脚本（全量版）\n"
+                  " * 维护：anamaxlec\n"
+                  " * 原作者：AIsouler\n"
+                  " * 项目仓库：https://github.com/anamaxlec/NetWeave\n"
+                  " * 脚本链接：https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Script/mihomoScript.js\n"
+                  " * 上游项目：https://github.com/AIsouler/MyClash\n"
+                  " * 友情推荐，非常好用、省电且内存占用低的代理软件：https://github.com/appshubcc/Bettbox\n"
+                  " */"
+              ),
+              Path('Script/Script.js'): (
+                  "/**\n"
+                  " * NetWeave - mihomo配置覆写脚本（精简版）\n"
+                  " * 维护：anamaxlec\n"
+                  " * 原作者：AIsouler\n"
+                  " * 项目仓库：https://github.com/anamaxlec/NetWeave\n"
+                  " * 脚本链接：https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Script/Script.js\n"
+                  " * 上游项目：https://github.com/AIsouler/MyClash\n"
+                  " * 友情推荐，非常好用、省电且内存占用低的代理软件：https://github.com/appshubcc/Bettbox\n"
+                  " */"
+              ),
+              Path('Config/mihomoConfig.yaml'): (
+                  "#  ---------说明---------\n"
+                  "#  NetWeave - mihomo配置（全量版）\n"
+                  "#  维护：anamaxlec\n"
+                  "#  原作者：AIsouler\n"
+                  "#  项目仓库：https://github.com/anamaxlec/NetWeave\n"
+                  "#  配置链接：https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Config/mihomoConfig.yaml\n"
+                  "#  上游项目：https://github.com/AIsouler/MyClash\n"
+                  "#  友情推荐，非常好用、省电且内存占用低的代理软件：https://github.com/appshubcc/Bettbox\n"
+                  "#  ---------------------"
+              ),
+              Path('Config/mihomoConfigLite.yaml'): (
+                  "#  ---------说明---------\n"
+                  "#  NetWeave - mihomo配置（精简版）\n"
+                  "#  维护：anamaxlec\n"
+                  "#  原作者：AIsouler\n"
+                  "#  项目仓库：https://github.com/anamaxlec/NetWeave\n"
+                  "#  配置链接：https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Config/mihomoConfigLite.yaml\n"
+                  "#  上游项目：https://github.com/AIsouler/MyClash\n"
+                  "#  友情推荐，非常好用、省电且内存占用低的代理软件：https://github.com/appshubcc/Bettbox\n"
+                  "#  ---------------------"
+              ),
+          }
+
+          for path, new_header in replacements.items():
+              text = path.read_text(encoding='utf-8')
+              if path.suffix == '.js':
+                  end = text.find('*/')
+                  if end == -1:
+                      raise RuntimeError(f'{path}: header end not found')
+                  text = new_header + text[end + 2:]
+              else:
+                  marker = '# --- 锚点定义 (通用属性) ---'
+                  idx = text.find(marker)
+                  if idx == -1:
+                      raise RuntimeError(f'{path}: header marker not found')
+                  text = new_header + '\n\n' + text[idx:]
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Script/mihomoScript.js Script/Script.js Config/mihomoConfig.yaml Config/mihomoConfigLite.yaml
+          git commit -m "docs: update NetWeave file headers"
+          git push origin main
