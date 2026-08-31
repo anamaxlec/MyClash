@@ -1,8 +1,10 @@
 /**
- * mihomo配置覆写脚本（全量版）
- * 作者：AIsouler
- * 源仓库：https://github.com/AIsouler/MyClash
- * 脚本链接：https://raw.githubusercontent.com/AIsouler/MyClash/main/Script/mihomoScript.js
+ * NetWeave - mihomo配置覆写脚本（全量版）
+ * 维护：anamaxlec
+ * 原作者：AIsouler
+ * 项目仓库：https://github.com/anamaxlec/NetWeave
+ * 脚本链接：https://raw.githubusercontent.com/anamaxlec/NetWeave/main/Script/mihomoScript.js
+ * 上游项目：https://github.com/AIsouler/MyClash
  * 友情推荐，非常好用、省电且内存占用低的代理软件：https://github.com/appshubcc/Bettbox
  */
 
